@@ -28,6 +28,7 @@
 "Default duration:" = "Standaardduur:";
 "Activate when starting Caffeine" = "Caffeine bij starten inschakelen";
 "Deactivate when device goes to sleep manually" = "Uitschakelen wanneer het apparaat handmatig in sluimerstand gaat";
+"Keep Caffeine active when connected to power" = "Caffeine actief houden wanneer de voeding is aangesloten";
 "Show this message when starting Caffeine" = "Dit bericht tonen bij het starten van Caffeine";
 "Keep apps active" = "Apps actief houden";
 "Prevents apps from becoming inactive and the screen saver from starting." = "Voorkomt dat apps inactief worden en dat de schermbeveiliging start.";

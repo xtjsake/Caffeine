@@ -28,6 +28,7 @@
 "Default duration:" = "デフォルトの時間:";
 "Activate when starting Caffeine" = "Caffeine 起動時に有効化";
 "Deactivate when device goes to sleep manually" = "手動でスリープしたときに無効化";
+"Keep Caffeine active when connected to power" = "電源に接続している間はCaffeineを有効のままにする";
 "Show this message when starting Caffeine" = "Caffeine 起動時にこのメッセージを表示";
 "Keep apps active" = "アプリをアクティブに保つ";
 "Prevents apps from becoming inactive and the screen saver from starting." = "アプリが非アクティブになるのを防ぎ、スクリーンセーバーの起動を防止します。";

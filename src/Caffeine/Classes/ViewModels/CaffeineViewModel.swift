@@ -7,6 +7,7 @@
 
 import ApplicationServices
 import Combine
+import IOKit.ps
 import SwiftUI
 
 /// Main view model for the Caffeine application
@@ -23,6 +24,10 @@ class CaffeineViewModel: ObservableObject {
     private var timeoutTimer: Timer?
     private var displayTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
+    private var powerSourceRunLoopSource: CFRunLoopSource?
+
+    /// Deactivate Caffeine when the battery drops below this percentage
+    private static let lowBatteryThreshold = 50
 
     // MARK: - Initialization
 
@@ -38,9 +43,18 @@ class CaffeineViewModel: ObservableObject {
             self.activate()
         }
 
+        // Apply the "keep active on AC power" policy at launch
+        self.applyPowerPolicy()
+
         // Show preferences on first launch
         if !UserDefaults.standard.bool(forKey: PreferenceKeys.suppressLaunchMessage) {
             self.showPreferences = true
+        }
+    }
+
+    deinit {
+        if let source = powerSourceRunLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .defaultMode)
         }
     }
 
@@ -139,6 +153,12 @@ class CaffeineViewModel: ObservableObject {
         }
     }
 
+    /// Updates the keep-active-on-AC-power behavior based on preference
+    func updateKeepActiveOnACPower(enabled: Bool) {
+        guard enabled else { return }
+        self.applyPowerPolicy()
+    }
+
     /// Returns a formatted string for the remaining time
     func formattedTimeRemaining() -> String? {
         // Only return a status if actually active
@@ -194,6 +214,91 @@ class CaffeineViewModel: ObservableObject {
                 }
             }
             .store(in: &self.cancellables)
+
+        // React to power source changes (AC adapter connected / disconnected)
+        NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)
+            .sink { [weak self] _ in
+                Task { @MainActor in
+                    self?.applyPowerPolicy()
+                }
+            }
+            .store(in: &self.cancellables)
+
+        // React to power source updates (covers battery level changes,
+        // which do not produce a process power state change)
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        let callback: IOPowerSourceCallbackType = { context in
+            guard let context else { return }
+            let viewModel = Unmanaged<CaffeineViewModel>.fromOpaque(context).takeUnretainedValue()
+            Task { @MainActor in
+                viewModel.applyPowerPolicy()
+            }
+        }
+        if let source = IOPSNotificationCreateRunLoopSource(callback, context)?.takeRetainedValue() {
+            self.powerSourceRunLoopSource = source
+            CFRunLoopAddSource(CFRunLoopGetMain(), source, .defaultMode)
+        }
+    }
+
+    /// Activates when the Mac is connected to power, deactivates when the
+    /// battery drops below the low-battery threshold,
+    /// if the "keep active on AC power" preference is enabled
+    private func applyPowerPolicy() {
+        guard UserDefaults.standard.bool(forKey: PreferenceKeys.keepActiveOnACPower) else { return }
+
+        if Self.isExternalPowerConnected() {
+            if !self.isActive {
+                self.activate()
+            }
+        } else if self.isActive, let level = Self.batteryLevel(), level < Self.lowBatteryThreshold {
+            self.deactivate()
+        }
+    }
+
+    /// Returns the current battery charge percentage (0-100), or nil if the
+    /// battery level is unavailable.
+    private static func batteryLevel() -> Int? {
+        guard
+            let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+            let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [CFTypeRef]
+        else { return nil }
+
+        for source in sources {
+            guard
+                let description = IOPSGetPowerSourceDescription(snapshot, source)?
+                    .takeUnretainedValue() as? [String: Any],
+                description[kIOPSPowerSourceStateKey] as? String == kIOPSBatteryPowerValue as String,
+                let level = description[kIOPSCurrentCapacityKey] as? Int
+            else { continue }
+
+            return level
+        }
+
+        return nil
+    }
+
+    /// Returns whether the Mac is connected to an external power source.
+    /// Desktops without a battery are treated as always connected.
+    private static func isExternalPowerConnected() -> Bool {
+        guard
+            let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+            let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [CFTypeRef]
+        else { return true }
+
+        var hasBattery = false
+
+        for source in sources {
+            guard
+                let description = IOPSGetPowerSourceDescription(snapshot, source)?
+                    .takeUnretainedValue() as? [String: Any],
+                let state = description[kIOPSPowerSourceStateKey] as? String
+            else { continue }
+
+            if state == kIOPSACPowerValue as String { return true }
+            if state == kIOPSBatteryPowerValue as String { hasBattery = true }
+        }
+
+        return !hasBattery
     }
 
     private func cancelTimers() {
@@ -212,4 +317,5 @@ enum PreferenceKeys {
     static let suppressLaunchMessage = "CASuppressLaunchMessage"
     static let deactivateOnManualSleep = "CADeactivateOnManualSleep"
     static let keepAppsActive = "CAKeepAppsActive"
+    static let keepActiveOnACPower = "CAKeepActiveOnACPower"
 }
