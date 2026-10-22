@@ -14,6 +14,7 @@ struct PreferencesView: View {
     @AppStorage(PreferenceKeys.suppressLaunchMessage) private var suppressLaunchMessage = false
     @AppStorage(PreferenceKeys.deactivateOnManualSleep) private var deactivateOnManualSleep = false
     @AppStorage(PreferenceKeys.keepAppsActive) private var keepAppsActive = false
+    @AppStorage(PreferenceKeys.keepActiveOnACPower) private var keepActiveOnACPower = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -76,6 +77,16 @@ struct PreferencesView: View {
                 Toggle("Deactivate when device goes to sleep manually", isOn: self.$deactivateOnManualSleep)
                     .font(.system(size: 13))
                     .accessibilityIdentifier("PreferencesView.deactivateOnManualSleepToggle")
+
+                Toggle("Keep Caffeine active when connected to power", isOn: Binding(
+                    get: { self.keepActiveOnACPower },
+                    set: { newValue in
+                        self.keepActiveOnACPower = newValue
+                        self.viewModel.updateKeepActiveOnACPower(enabled: newValue)
+                    }
+                ))
+                .font(.system(size: 13))
+                .accessibilityIdentifier("PreferencesView.keepActiveOnACPowerToggle")
 
                 Toggle("Show this message when starting Caffeine", isOn: Binding(
                     get: { !self.suppressLaunchMessage },

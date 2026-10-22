@@ -28,6 +28,7 @@
 "Default duration:" = "Duração predefinida:";
 "Activate when starting Caffeine" = "Ativar ao iniciar o Caffeine";
 "Deactivate when device goes to sleep manually" = "Desativar quando o dispositivo entra em repouso manualmente";
+"Keep Caffeine active when connected to power" = "Manter o Caffeine ativo quando ligado à corrente";
 "Show this message when starting Caffeine" = "Mostrar esta mensagem ao iniciar o Caffeine";
 "Keep apps active" = "Manter apps ativas";
 "Prevents apps from becoming inactive and the screen saver from starting." = "Impede que as apps fiquem inativas e que a proteção de ecrã seja iniciada.";
