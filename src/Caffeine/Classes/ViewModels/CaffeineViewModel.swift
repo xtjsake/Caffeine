@@ -24,6 +24,10 @@ class CaffeineViewModel: ObservableObject {
     private var timeoutTimer: Timer?
     private var displayTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
+    private var powerSourceRunLoopSource: CFRunLoopSource?
+
+    /// Deactivate Caffeine when the battery drops below this percentage
+    private static let lowBatteryThreshold = 50
 
     // MARK: - Initialization
 
@@ -45,6 +49,12 @@ class CaffeineViewModel: ObservableObject {
         // Show preferences on first launch
         if !UserDefaults.standard.bool(forKey: PreferenceKeys.suppressLaunchMessage) {
             self.showPreferences = true
+        }
+    }
+
+    deinit {
+        if let source = powerSourceRunLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .defaultMode)
         }
     }
 
@@ -213,9 +223,25 @@ class CaffeineViewModel: ObservableObject {
                 }
             }
             .store(in: &self.cancellables)
+
+        // React to power source updates (covers battery level changes,
+        // which do not produce a process power state change)
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        let callback: IOPowerSourceCallbackType = { context in
+            guard let context else { return }
+            let viewModel = Unmanaged<CaffeineViewModel>.fromOpaque(context).takeUnretainedValue()
+            Task { @MainActor in
+                viewModel.applyPowerPolicy()
+            }
+        }
+        if let source = IOPSNotificationCreateRunLoopSource(callback, context)?.takeRetainedValue() {
+            self.powerSourceRunLoopSource = source
+            CFRunLoopAddSource(CFRunLoopGetMain(), source, .defaultMode)
+        }
     }
 
-    /// Activates when the Mac is connected to power, deactivates when on battery,
+    /// Activates when the Mac is connected to power, deactivates when the
+    /// battery drops below the low-battery threshold,
     /// if the "keep active on AC power" preference is enabled
     private func applyPowerPolicy() {
         guard UserDefaults.standard.bool(forKey: PreferenceKeys.keepActiveOnACPower) else { return }
@@ -224,9 +250,31 @@ class CaffeineViewModel: ObservableObject {
             if !self.isActive {
                 self.activate()
             }
-        } else if self.isActive {
+        } else if self.isActive, let level = Self.batteryLevel(), level < Self.lowBatteryThreshold {
             self.deactivate()
         }
+    }
+
+    /// Returns the current battery charge percentage (0-100), or nil if the
+    /// battery level is unavailable.
+    private static func batteryLevel() -> Int? {
+        guard
+            let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+            let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [CFTypeRef]
+        else { return nil }
+
+        for source in sources {
+            guard
+                let description = IOPSGetPowerSourceDescription(snapshot, source)?
+                    .takeUnretainedValue() as? [String: Any],
+                description[kIOPSPowerSourceStateKey] as? String == kIOPSBatteryPowerValue as String,
+                let level = description[kIOPSCurrentCapacityKey] as? Int
+            else { continue }
+
+            return level
+        }
+
+        return nil
     }
 
     /// Returns whether the Mac is connected to an external power source.
